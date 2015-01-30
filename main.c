@@ -42,7 +42,7 @@ int main()
         struct json *a;
  
         json_loadstring(J, json);
-        
+       
         printf("object:%x, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
 
         //g is root

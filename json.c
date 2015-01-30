@@ -74,7 +74,7 @@ void json_free(struct json *J)
                 json_free(J->child.v.s);
                 my_free(J->child.v.s);
                 my_free(J);
-        } if (J->child.type & JSON_OBJECT) {
+        } else if (J->child.type & JSON_OBJECT) {
                 for (i = 0; i < (J->child.type & CNT_MASK); i++)
                         json_free(&J->child.v.s[i]);
 

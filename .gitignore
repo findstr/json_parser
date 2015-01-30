@@ -4,6 +4,8 @@
 *.obj
 *.elf
 
+json
+
 # Precompiled Headers
 *.gch
 *.pch
