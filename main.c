@@ -42,13 +42,18 @@ int main()
         struct json *a;
  
         json_loadstring(J, json);
+<<<<<<< HEAD
        
         printf("object:%x, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
+=======
+        
+        printf("object:%lx, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
+>>>>>>> 22c56b3b4647c4de2798fd936a5bab05eb9741f1
 
         //g is root
         a = json_getbyindex(J, 0);
         
-        printf("object1:%x, type:%x, cnt:%x\n", (uintptr_t)a, json_gettype(a), json_getchildcnt(a));
+        printf("object1:%lx, type:%x, cnt:%x\n", (uintptr_t)a, json_gettype(a), json_getchildcnt(a));
         
         a = json_getbyindex(a, 0);
         
