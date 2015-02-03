@@ -34,7 +34,7 @@ struct json_data {
 
 
 struct json *json_create();
-void json_free();
+void json_free(struct json *J);
 
 int json_load(struct json *J, const char *path);
 int json_loadstring(struct json *J, const char *sz);
