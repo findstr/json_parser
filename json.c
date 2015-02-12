@@ -131,7 +131,8 @@ _skip_to(char *sz, char ch)
         
         assert(*sz);
 
-        sz++;
+        if (*sz)
+                sz++;
         
         return sz;
 }
