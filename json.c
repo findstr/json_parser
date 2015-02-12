@@ -208,7 +208,7 @@ _load_recursive(struct json *J, char *sz)
         } else if (J->child.type & JSON_VALUE) {
                         //name
                         sz = _skip_to(sz, '"');
-                        if (*sz == 0)
+                        if (*sz == '\0')
                                 return NULL;
 
                         J->name = sz;
