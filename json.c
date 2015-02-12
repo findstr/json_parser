@@ -286,7 +286,7 @@ _load_recursive(struct json *J, char *sz)
                         }
                         
                         assert(*sz == ']');
-                        if (*sz == '\0')
+                        if (*sz == '\0' || *sz != ']')
                                 return NULL;
 
                         J->child.v.s = arr;
