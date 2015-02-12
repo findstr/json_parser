@@ -166,13 +166,8 @@ _load_recursive(struct json *J, char *sz)
                 sz = _skip_space(sz);
                 
                 assert(*sz == '{');
-                if (*sz == 0)
-                        return NULL;
-
                 sz = _skip_to(sz, '{');
                 sz = _skip_space(sz);
-                if (*sz == 0)
-                        return NULL;
 
                 while (*sz != '}' && *sz != '\0') {
                         if (*sz == '"') {
@@ -196,6 +191,7 @@ _load_recursive(struct json *J, char *sz)
                                 sz++;
                 }
 
+                sz = _skip_space(sz);
                 assert(*sz == '}');
                 if (*sz == '}')
                         sz++;
@@ -274,9 +270,7 @@ _load_recursive(struct json *J, char *sz)
 
                         assert(*sz == '[');
                         sz = _skip_to(sz, '[');
-                        if (*sz == '\0')
-                                return NULL;
-
+                        
                         while (*sz != ']' && *sz != '\0') {
                                 arr = _expand_one_node(arr, JSON_OBJECT, nr);
                                 sz = _load_recursive(&arr[nr], sz);
@@ -285,8 +279,9 @@ _load_recursive(struct json *J, char *sz)
                                 nr++;
                         }
                         
+                        sz = _skip_space(sz);
                         assert(*sz == ']');
-                        if (*sz == '\0' || *sz != ']')
+                        if (*sz == '\0')
                                 return NULL;
 
                         J->child.v.s = arr;
