@@ -1,5 +1,6 @@
-  language: c
-    compiler:
-      - gcc
-    # Change this to your needs
-    script: make
+language: c
+compiler:
+  - clang
+  - gcc
+# Change this to your needs
+script: make
