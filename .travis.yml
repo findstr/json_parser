@@ -1,6 +1,5 @@
 language: c
 compiler:
-  - clang
   - gcc
 # Change this to your needs
 script: make
