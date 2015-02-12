@@ -41,14 +41,14 @@ int main()
         struct json *J = json_create();
         struct json *a;
  
-        json_loadstring(J, json);
+        printf("json_loadstring:%d\n", json_loadstring(J, json));
        
-        printf("object:%lx, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
+        printf("object:%x, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
 
         //g is root
         a = json_getbyindex(J, 0);
         
-        printf("object1:%lx, type:%x, cnt:%x\n", (uintptr_t)a, json_gettype(a), json_getchildcnt(a));
+        printf("object1:%x, type:%x, cnt:%x\n", (uintptr_t)a, json_gettype(a), json_getchildcnt(a));
         
         a = json_getbyindex(a, 0);
         

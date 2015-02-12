@@ -166,9 +166,13 @@ _load_recursive(struct json *J, char *sz)
                 sz = _skip_space(sz);
                 
                 assert(*sz == '{');
+                if (*sz == 0)
+                        return NULL;
 
                 sz = _skip_to(sz, '{');
                 sz = _skip_space(sz);
+                if (*sz == 0)
+                        return NULL;
 
                 while (*sz != '}' && *sz != '\0') {
                         if (*sz == '"') {
@@ -180,11 +184,14 @@ _load_recursive(struct json *J, char *sz)
                         } else {
                                 DBG_PRINT("object, %s", sz);
                                 assert(!"OMG");
+                                return NULL;
                         }
+                        
+                        if (sz == NULL)
+                                return NULL;
 
                         nr++;
                         sz = _skip_space(sz);
-
                         if (*sz == ',')
                                 sz++;
                 }
@@ -192,6 +199,8 @@ _load_recursive(struct json *J, char *sz)
                 assert(*sz == '}');
                 if (*sz == '}')
                         sz++;
+                else
+                        return NULL;
 
                 J->child.v.s = arr;
                 J->child.type |= nr;
@@ -199,11 +208,20 @@ _load_recursive(struct json *J, char *sz)
         } else if (J->child.type & JSON_VALUE) {
                         //name
                         sz = _skip_to(sz, '"');
+                        if (*sz == 0)
+                                return NULL;
+
                         J->name = sz;
+
                         sz= _skip_to(sz, '"');
-                        sz[-1] = 0;
+                        if (*sz == '\0')
+                                return NULL;
+                        sz[-1] = '\0';
+
                         //judge if array or real value
                         sz = _skip_space(sz);
+                        if (*sz == '\0')
+                                return NULL;
                         sz = _skip_space(sz+ 1);
                         
                         DBG_PRINT("occurs value:%s\n", J->name);
@@ -211,9 +229,15 @@ _load_recursive(struct json *J, char *sz)
                         if (*sz == '"') {       //real value(char)
                                 J->child.type = JSON_STRING;
                                 sz = _skip_to(sz, '"');
+                                if (*sz == '\0')
+                                        return NULL;
                                 J->child.v.c = sz;
+
                                 sz = _skip_to(sz, '"');
-                                sz[-1] = 0;
+                                if (*sz == '\0')
+                                        return NULL;
+                                sz[-1] = '\0';
+                                
                                 sz = _skip_space(sz);
                                 if (*sz == ',')
                                         sz++;
@@ -229,7 +253,7 @@ _load_recursive(struct json *J, char *sz)
                                 return sz + sizeof("true");
                         } else if (strncmp(sz, "false", sizeof("false")) == 0) {
                                 J->child.type = JSON_BOOLEAN;
-                                J->child.v.b = 1;
+                                J->child.v.b = 0;
                                 return sz + sizeof("false");
                         } else if (*sz== '[') {
                                 J->child.type = JSON_ARRAY;
@@ -240,6 +264,7 @@ _load_recursive(struct json *J, char *sz)
                         } else {
                                 DBG_PRINT("saddly value:%s\n", sz);
                                 assert(!"saddly!");
+                                return NULL;
                         }
 
         } else if ((J->child.type & JSON_ARRAY) == JSON_ARRAY) {
@@ -249,27 +274,32 @@ _load_recursive(struct json *J, char *sz)
 
                         assert(*sz == '[');
                         sz = _skip_to(sz, '[');
+                        if (*sz == '\0')
+                                return NULL;
 
-                        while (*sz != ']' && *sz != 0) {
+                        while (*sz != ']' && *sz != '\0') {
                                 arr = _expand_one_node(arr, JSON_OBJECT, nr);
                                 sz = _load_recursive(&arr[nr], sz);
                                 if (*sz == ',')
                                         sz++;
                                 nr++;
                         }
+                        
+                        assert(*sz == ']');
+                        if (*sz == '\0')
+                                return NULL;
 
                         J->child.v.s = arr;
                         J->child.type |= nr;
                         
                         DBG_PRINT("JSON_ARRAY:%s", sz);
-                        assert(*sz == ']');
 
                         return sz + 1;
         } else {
                 DBG_PRINT("sz:%s, J->child.type:%d\n", sz, J->child.type);
                 assert(!"never come here");
+                return NULL;
         }
-
 }
 
 int json_loadstring(struct json *J, const char *sz)
@@ -372,7 +402,7 @@ void json_dump(struct json *J)
                         printf("name->%s:value->%d\n", J->name, J->child.v.n);
                         break;
                 case JSON_STRING:
-                        printf("name->%s:value->%d\n", J->name, J->child.v.n);
+                        printf("name->%s:value->%s\n", J->name, J->child.v.c);
                         break;
                 default:
                         printf("Unexpected Json type:0x%x\n", J->child.type);
