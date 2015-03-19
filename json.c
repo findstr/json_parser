@@ -184,6 +184,7 @@ _load_recursive(struct json *J, char *sz)
                         }
                         
                         if (sz == NULL) {
+                                DBG_PRINT("free it\n");
                                 my_free(arr);
                                 return NULL;
                         }
@@ -278,6 +279,11 @@ _load_recursive(struct json *J, char *sz)
                         while (*sz != ']' && *sz != '\0') {
                                 arr = _expand_one_node(arr, JSON_OBJECT, nr);
                                 sz = _load_recursive(&arr[nr], sz);
+                                if (sz == NULL) {
+                                        my_free(arr);
+                                        return NULL;
+                                }
+
                                 if (*sz == ',')
                                         sz++;
                                 nr++;
@@ -289,6 +295,7 @@ _load_recursive(struct json *J, char *sz)
                                 my_free(arr);
                                 return NULL;
                         }
+
                         J->child.v.s = arr;
                         J->child.type |= nr;
                         

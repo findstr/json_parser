@@ -21,7 +21,7 @@ int main()
 	"\"result:\":{"
 		"\"data\":"
 		        "["
-			"{"
+                                "{"
 				"\"MCC\":\"0\","
 				"\"MNC\":\"0\","
 				"\"LAC\":\"6145\","
@@ -39,11 +39,16 @@ int main()
 	"\"error_code\":0"
         "}";
 
+        int err;
         struct json *J = json_create();
         struct json *a;
  
-        printf("json_loadstring:%d\n", json_loadstring(J, json));
+        err = json_loadstring(J, json);
+        printf("json_loadstring:%d\n", err);
        
+        if (err < 0)
+                return err;
+
         printf("object:%x, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
 
         //g is root
