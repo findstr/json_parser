@@ -4,8 +4,8 @@
  Email: findstr@sina.com
  File Name: /home/findstr/code/json.h
  Description: (C)  2015-01  findstr
-   
- Edit History: 
+
+ Edit History:
    2015-01-25    File created.
 =========================================================================
 **/
@@ -17,10 +17,10 @@ struct json;
 #define JSON_ARRAY      (1 << 29)
 #define JSON_VALUE      (0xF << 25)
 
-#define JSON_STRING     (1 << 28)
-#define JSON_NUMBER     (1 << 27)
-#define JSON_DOUBLE     (1 << 26)
-#define JSON_BOOLEAN    (1 << 25)
+#define JSON_STRING     (1 << 25)
+#define JSON_NUMBER     (2 << 25)
+#define JSON_DOUBLE     (3 << 25)
+#define JSON_BOOLEAN    (4 << 25)
 
 struct json_data {
         int type;
@@ -45,7 +45,7 @@ struct json *json_getbyindex(struct json *J, int index);
 const char *json_getname(struct json *J);
 const struct json_data *json_getdata(struct json *J);
 
-int json_getchildcnt(struct json *J);
+int json_getdatacnt(struct json *J);
 int json_gettype(struct json *J);
 
 //for debug

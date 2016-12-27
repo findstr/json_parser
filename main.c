@@ -4,8 +4,8 @@
  Email: findstr@sina.com
  File Name: main.c
  Description: (C)  2015-01  findstr
-   
- Edit History: 
+
+ Edit History:
    2015-01-25    File created.
 =========================================================================
 **/
@@ -42,30 +42,20 @@ int main()
         int err;
         struct json *J = json_create();
         struct json *a;
- 
         err = json_loadstring(J, json);
         printf("json_loadstring:%d\n", err);
-       
         if (err < 0)
-                return err;
-
-        printf("object:%x, type:%x, cnt:%x\n", (uintptr_t)J, json_gettype(J), json_getchildcnt(J));
-
+		goto end;
+        printf("object:%p, type:%x, cnt:%d\n", J, json_gettype(J), json_getdatacnt(J));
         //g is root
-        a = json_getbyindex(J, 0);
-        
-        printf("object1:%x, type:%x, cnt:%x\n", (uintptr_t)a, json_gettype(a), json_getchildcnt(a));
-        
+        a = json_getbyindex(J, 2);
+        printf("object1:%p, name:%s, type:%x, cnt:%d\n", a, json_getname(a),
+			json_gettype(a), json_getdatacnt(a));
         a = json_getbyindex(a, 0);
-        
-        printf("name:%s, value:%s\n", json_getname(a), json_getdata(a)->v.c);
-
+        printf("name:%s, type:%x\n", json_getname(a), json_getdata(a)->type);
         printf("------------dump--------------------\n");
-
-
         json_dump(J);
-
+end:
         json_free(J);
-
         return 0;
 }

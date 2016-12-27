@@ -1,14 +1,3 @@
-/**
-=========================================================================
- Author: findstr
- Email: findstr@sina.com
- File Name: json.c
- Description: (C)  2015-01  findstr
-   
- Edit History: 
-   2015-01-25    File created.
-=========================================================================
-**/
 #include <ctype.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -18,406 +7,439 @@
 
 #include "json.h"
 
-#define CNT_MASK        (~(JSON_ROOT | JSON_OBJECT | JSON_ARRAY | JSON_VALUE))
-#define JSON_SPACE      "\r\n "
+#define CNT_MASK (~(JSON_ROOT | JSON_OBJECT | JSON_ARRAY | JSON_VALUE))
+#define ALIGN_MASK (sizeof(void *) - 1)
+#define	NODE_SIZE (256)
+#define JSON_SPACE "\r\n "
 
-//#define DBG_PRINT(...)        printf(__VA_ARGS__)
-#define DBG_PRINT(...)        ((void)0)
+#define DBG_PRINT(...)	printf(__VA_ARGS__)
+//#define DBG_PRINT(...)	      ((void)0)
 
-#define my_malloc(a)    malloc(a)
-#define my_free(a)      free(a)
+#define	EXPECT(str, ch, errmsg)	\
+	if (*str != ch) {\
+		DBG_PRINT(errmsg);\
+		return NULL;\
+	} else {\
+		++str;\
+	}
 
-struct json {
-        char *name;
-        struct json_data child;
+#define my_malloc(a) malloc(a)
+#define	my_realloc(ptr, a) realloc(ptr, a)
+#define my_free(a) free(a)
+
+struct node {
+	int cap;
+	struct node *next;
+	//data append tail;
 };
 
-static struct json *
-_new_node(int type)
+struct pool {
+	int offset;
+	struct node *nodes;
+};
+
+
+struct json {
+	union {
+		char *name;
+		struct pool *pool;
+	} u;
+	struct json_data data;
+};
+
+static struct pool *
+pool_create()
 {
-        struct json *J;
-
-        J = (struct json *)my_malloc(sizeof(struct json));
-
-        memset(J, 0, sizeof(*J));
-        
-        J->child.type = type;
-
-        return J;
-
+	struct pool *p;
+	p = (struct pool *)my_malloc(sizeof(*p));
+	memset(p, 0, sizeof(*p));
+	return p;
 }
 
-static struct json *
-_expand_one_node(struct json *J, int type, int n)
+static void
+pool_free(struct pool *p)
 {
-        J = (struct json *)realloc(J, (n + 1) * sizeof(struct json));
-
-        memset(&J[n], 0, sizeof(struct json));
-
-        J[n].child.type = type;
-
-        return J;
+	struct node *n = p->nodes;
+	while (n) {
+		struct node *t = n;
+		n = n->next;
+		my_free(t);
+	}
+	my_free(p);
 }
 
-struct json *json_create()
+static void *
+pool_alloc(struct pool *p, size_t sz)
 {
-        return _new_node(JSON_ROOT);
-}
-
-void json_free(struct json *J)
-{
-        int i;
-        if (J == NULL)
-                return ;
-
-        if (J->child.type & JSON_ROOT) {
-                json_free(J->child.v.s);
-                assert(J->name);
-                my_free(J->name);
-                my_free(J->child.v.s);
-                my_free(J);
-        } else if (J->child.type & JSON_OBJECT) {
-                for (i = 0; i < (J->child.type & CNT_MASK); i++)
-                        json_free(&J->child.v.s[i]);
-
-                my_free(J->child.v.s);
-        } else if (J->child.type & JSON_ARRAY) {
-                for (i = 0; i < (J->child.type & CNT_MASK); i++)
-                        json_free(&J->child.v.s[i]);
-
-                my_free(J->child.v.s);
-        }
-}
-
-int json_load(struct json *J, const char *path)
-{
-        int err;
-        FILE *fp;
-        char *buff;
-        struct stat   st;
-        
-        err = stat(path, &st);
-        if (err < 0)
-                return -1;
-
-        fp = fopen(path, "rb");
-        if (fp == NULL)
-                return -1;
-
-        buff = (char *)my_malloc(st.st_size + 1);
-        assert(buff);
-        
-        if (fread(buff, st.st_size, 1, fp) != 1) {
-                free(buff);
-                fclose(fp);
-                return -1;
-        }
-
-        buff[st.st_size] = 0;
-        
-        err = json_loadstring(J, buff);
-
-        fclose(fp);
-        free(buff);
-
-        return err;
-}
-
-static __inline char *
-_skip_to(char *sz, char ch)
-{
-        while (*sz != ch && *sz != 0)
-                sz++;
-        
-        assert(*sz);
-
-        if (*sz)
-                sz++;
-        
-        return sz;
+	void *ret;
+	struct node *i;
+	sz = (sz + ALIGN_MASK) & (~ALIGN_MASK);
+	i = p->nodes;
+	if (!i || i->cap - p->offset < sz) {
+		size_t need;
+		struct node *n;
+		if (sz > NODE_SIZE)
+			need = (sz + ALIGN_MASK) & (~ALIGN_MASK);
+		else
+			need = NODE_SIZE;
+		need += sizeof(struct node);
+		n = my_malloc(need);
+		n->cap = need;
+		p->offset = 0;
+		n->next = p->nodes;
+		p->nodes = n;
+		i = n;
+	}
+	assert(i->cap - p->offset == sz);
+	ret = (void *)(i + 1) + p->offset;
+	p->offset += sz;
+	return ret;
 }
 
 static char *
-_skip_space(char *sz)
+pool_dupstr(struct pool *p, const char *start, const char *end)
 {
-        const char *skip;
-
-        for (; *sz; sz++) {
-                for (skip = JSON_SPACE; *skip; skip++) {
-                        if (*sz == *skip)
-                                break;
-                }
-
-                if (*skip == 0)
-                        break;
-        }
-
-        return sz;
+	size_t sz = end - start;
+	char *str = (char *)pool_alloc(p, sz + 1);
+	memcpy(str, start, sz);
+	str[sz] = '\0';
+	return str;
 }
 
-static char *
-_load_recursive(struct json *J, char *sz)
+static struct json *
+nodenew(struct pool *p, int type)
 {
-        int nr;
-        
-        nr = 0;
-        if ((J->child.type & JSON_OBJECT) == JSON_OBJECT) {
-                struct json             *arr = NULL;
-                sz = _skip_space(sz);
-                
-                assert(*sz == '{');
-                sz = _skip_to(sz, '{');
-                sz = _skip_space(sz);
-
-                while (*sz != '}' && *sz != '\0') {
-                        if (*sz == '"') {
-                                arr = _expand_one_node(arr, JSON_VALUE, nr);
-                                sz = _load_recursive(&arr[nr], sz);
-                        } else if (*sz == '{') {
-                                arr = _expand_one_node(arr, JSON_OBJECT, nr);
-                                sz = _load_recursive(&arr[nr], sz);
-                        } else {
-                                DBG_PRINT("object, %s", sz);
-                                assert(!"OMG");
-                                my_free(arr);
-                                return NULL;
-                        }
-                        
-                        if (sz == NULL) {
-                                DBG_PRINT("free it\n");
-                                my_free(arr);
-                                return NULL;
-                        }
-
-                        nr++;
-                        sz = _skip_space(sz);
-                        if (*sz == ',')
-                                sz++;
-                }
-
-                sz = _skip_space(sz);
-                assert(*sz == '}');
-                if (*sz == '}') {
-                        sz++;
-                } else {
-                        my_free(arr);
-                        return NULL;
-                }
-                J->child.v.s = arr;
-                J->child.type |= nr;
-                return sz;
-        } else if (J->child.type & JSON_VALUE) {
-                        //name
-                        sz = _skip_to(sz, '"');
-                        if (*sz == '\0')
-                                return NULL;
-
-                        J->name = sz;
-
-                        sz= _skip_to(sz, '"');
-                        if (*sz == '\0')
-                                return NULL;
-                        sz[-1] = '\0';
-
-                        //judge if array or real value
-                        sz = _skip_space(sz);
-                        if (*sz == '\0')
-                                return NULL;
-                        sz = _skip_space(sz+ 1);
-                        
-                        DBG_PRINT("occurs value:%s\n", J->name);
-                        
-                        if (*sz == '"') {       //real value(char)
-                                J->child.type = JSON_STRING;
-                                sz = _skip_to(sz, '"');
-                                if (*sz == '\0')
-                                        return NULL;
-                                J->child.v.c = sz;
-
-                                sz = _skip_to(sz, '"');
-                                if (*sz == '\0')
-                                        return NULL;
-                                sz[-1] = '\0';
-                                
-                                sz = _skip_space(sz);
-                                if (*sz == ',')
-                                        sz++;
-                                
-                                return sz;
-                        } else if (isdigit(*sz)) {
-                                J->child.type = JSON_NUMBER;
-                                J->child.v.n = (int)strtoul(sz, &sz, 0);
-                                return sz;
-                        } else if (strncmp(sz, "true", sizeof("true") - 1) == 0) {
-                                J->child.type = JSON_BOOLEAN;
-                                J->child.v.b = 1;
-                                return sz + sizeof("true") - 1;
-                        } else if (strncmp(sz, "false", sizeof("false") - 1) == 0) {
-                                J->child.type = JSON_BOOLEAN;
-                                J->child.v.b = 0;
-                                return sz + sizeof("false") - 1;
-                        } else if (*sz== '[') {
-                                J->child.type = JSON_ARRAY;
-                                return _load_recursive(J, sz);
-                        } else if (*sz == '{') {
-                                J->child.type = JSON_OBJECT;
-                                return _load_recursive(J, sz);
-                        } else {
-                                DBG_PRINT("saddly value:%s\n", sz);
-                                assert(!"saddly!");
-                                return NULL;
-                        }
-
-        } else if ((J->child.type & JSON_ARRAY) == JSON_ARRAY) {
-                        DBG_PRINT("occurs array\n");
-                        
-                        struct json *arr = NULL;
-
-                        assert(*sz == '[');
-                        sz = _skip_to(sz, '[');
-                        
-                        while (*sz != ']' && *sz != '\0') {
-                                arr = _expand_one_node(arr, JSON_OBJECT, nr);
-                                sz = _load_recursive(&arr[nr], sz);
-                                if (sz == NULL) {
-                                        my_free(arr);
-                                        return NULL;
-                                }
-
-                                if (*sz == ',')
-                                        sz++;
-                                nr++;
-                        }
-                        
-                        sz = _skip_space(sz);
-                        assert(*sz == ']');
-                        if (*sz == '\0') {
-                                my_free(arr);
-                                return NULL;
-                        }
-
-                        J->child.v.s = arr;
-                        J->child.type |= nr;
-                        
-                        DBG_PRINT("JSON_ARRAY:%s", sz);
-
-                        return sz + 1;
-        } else {
-                DBG_PRINT("sz:%s, J->child.type:%d\n", sz, J->child.type);
-                assert(!"never come here");
-                return NULL;
-        }
+	struct json *j;
+	j = (struct json *)pool_alloc(p, sizeof(struct json));
+	memset(j, 0, sizeof(*j));
+	j->data.type = type;
+	return j;
 }
 
-int json_loadstring(struct json *J, const char *sz)
+static struct json *
+nodeexpand(struct json *j, int type, int n)
 {
-        char *bk;
-        char *res;
-
-        assert(J->child.type & JSON_ROOT);
-        
-        bk = strdup(sz);
-        assert(bk);
-        J->child.type |= 1;
-        J->name = bk;
-        J->child.v.s = _new_node(JSON_OBJECT);
-        
-        res = _load_recursive(J->child.v.s, bk); 
-        assert(*res == 0);
-
-        if (res == NULL)
-                return -1;
-
-        return 0;
+	j = (struct json *)my_realloc(j, (n + 1) * sizeof(struct json));
+	memset(&j[n], 0, sizeof(struct json));
+	j[n].data.type = type;
+	return j;
 }
 
-struct json *json_getbyname(struct json *J, const char *name)
+//TODO:check grammer
+static int
+check_name(const char *str, size_t sz)
 {
-        int i;
-        struct json *child;
-        assert(J);
-        assert(name);
-
-        child = J->child.v.s;
-        if (child == NULL)
-                return NULL;
-
-        for (i = 0; i < (J->child.type & CNT_MASK); i++, child++) {
-                if (child->name && strcmp(child->name, name) == 0)
-                        return child;
-        }
-
-        return NULL;
+	return 1;
 }
 
-struct json *json_getbyindex(struct json *J, int index)
+static int
+check_string(const char *str, size_t sz)
 {
-        assert(J);
-        assert(index < (J->child.type & CNT_MASK));
-
-        return &J->child.v.s[index];
-}
-
-const char *json_getname(struct json *J)
-{
-        assert(J);
-
-        return J->name;
-}
-
-const struct json_data *json_getdata(struct json *J)
-{
-        assert(J);
-        return &J->child;
-}
-
-int json_getchildcnt(struct json *J)
-{
-        assert(J);
-
-        return (J->child.type & CNT_MASK);
-}
-
-int json_gettype(struct json *J)
-{
-        assert(J);
-
-        return (J->child.type & (~CNT_MASK));
+	return 1;
 }
 
 
-void json_dump(struct json *J)
-{
-        int i;
-        if (J == NULL)
-                return ;
 
-        if (J->child.type & JSON_ROOT) {
-                json_dump(J->child.v.s);
-        } if (J->child.type & JSON_OBJECT) {
-                for (i = 0; i < (J->child.type & CNT_MASK); i++) {
-                        if (J->name)
-                                printf("object name:%s ", J->name);
-                        json_dump(&J->child.v.s[i]);
-                }
-        } else if (J->child.type & JSON_VALUE) {
-                switch (J->child.type) {
-                case JSON_BOOLEAN:
-                        printf("name->%s:value->boolean, %s\n", J->name, J->child.v.b ? "true" : "false");
-                        break;
-                case JSON_NUMBER:
-                        printf("name->%s:value->%d\n", J->name, J->child.v.n);
-                        break;
-                case JSON_STRING:
-                        printf("name->%s:value->%s\n", J->name, J->child.v.c);
-                        break;
-                default:
-                        printf("Unexpected Json type:0x%x\n", J->child.type);
-                        assert(0);
-                }
-        } else if (J->child.type & JSON_ARRAY) {
-                for (i = 0; i < (J->child.type & CNT_MASK); i++)
-                        json_dump(&J->child.v.s[i]);
-        }
+struct json *
+json_create()
+{
+	struct json *j;
+	struct pool *p;
+	p = pool_create();
+	j = nodenew(p, JSON_ROOT | JSON_OBJECT);
+	j->u.pool = p;
+	return j;
+}
+
+void
+json_free(struct json *j)
+{
+	assert(j->type == JSON_ROOT);
+	pool_free(j->u.pool);
+}
+
+int
+json_load(struct json *J, const char *path)
+{
+	int err;
+	FILE *fp;
+	char *buff;
+	struct stat   st;
+	err = stat(path, &st);
+	if (err < 0)
+		return -1;
+	fp = fopen(path, "rb");
+	if (fp == NULL)
+		return -1;
+	buff = (char *)my_malloc(st.st_size + 1);
+	if (fread(buff, st.st_size, 1, fp) != 1) {
+		free(buff);
+		fclose(fp);
+		return -1;
+	}
+	buff[st.st_size] = 0;
+	err = json_loadstring(J, buff);
+	fclose(fp);
+	free(buff);
+	return err;
+}
+
+static inline const char *
+skip_to(const char *str, char ch)
+{
+        while (*str != ch && *str != 0)
+                str++;
+        if (*str)
+                str++;
+        return str;
+}
+
+static inline const char *
+skip_space(const char *str)
+{
+	const char *skip;
+	for (; *str; str++) {
+		for (skip = JSON_SPACE; *skip; skip++) {
+			if (*str == *skip)
+				break;
+		}
+		if (*skip == 0)
+			break;
+	}
+	return str;
+}
+
+static const char *
+load(struct pool *p, struct json_data *jd, const char *str)
+{
+	int nr = 0;
+	const char *start;
+	if ((jd->type & JSON_OBJECT) == JSON_OBJECT) {
+		struct json *arr = NULL;
+		str = skip_space(str);
+		EXPECT(str, '{', "json object should open with '{'\n")
+		str = skip_space(str);
+		while (*str != '}' && *str != '\0') {
+			EXPECT(str, '"', "json value name should open with '\"' ");
+			arr = nodeexpand(arr, JSON_VALUE, nr);
+			start = str;
+			str = skip_to(str, '"');
+			arr[nr].u.name = pool_dupstr(p, start, str);
+			DBG_PRINT("occurs value:%s\n", arr[nr].u.name);
+			if (!check_name(arr[nr].u.name, str - start))
+				return NULL;
+			EXPECT(str, ':', "json value should sperate by ':'\n");
+			str = load(p, &arr[nr].data, str);
+			if (str == NULL) {
+				DBG_PRINT("free it\n");
+				my_free(arr);
+				return NULL;
+			}
+			++nr;
+			str = skip_space(str);
+			if (*str == ',')
+				str++;
+		}
+		//ok, all array element has parsed
+		if (*str == '}') {
+			str++;
+		} else {
+			my_free(arr);
+			return NULL;
+		}
+		jd->type |= nr;
+		nr = nr * sizeof(struct json);
+		jd->v.s = pool_alloc(p, nr);
+		memcpy(jd->v.s, arr, nr);
+		my_free(arr);
+		return str;
+	} else if (jd->type & JSON_VALUE) {
+		//judge if array or real value
+		str = skip_space(str);
+		if (*str == '\0')
+			return NULL;
+		if (*str == '"') {	//real value(char)
+			start = ++str;
+			jd->type = JSON_STRING;
+			str = skip_to(str, '"');
+			if (*str == '\0')
+				return NULL;
+			jd->v.c = pool_dupstr(p, start, str);
+			if (!check_string(jd->v.c, str - start))
+				return NULL;
+			str = skip_space(str);
+			if (*str == ',')
+				str++;
+			return str;
+		} else if (isdigit(*str)) {//TODO:process more types
+			char *end;
+			start = str;
+			jd->type = JSON_NUMBER;
+			jd->v.n = (int)strtoul(str, &end, 0);
+			str = end;
+			if (start == str)
+				return NULL;
+			return str;
+		} else if (strncmp(str, "true", sizeof("true") - 1) == 0) {
+			jd->type = JSON_BOOLEAN;
+			jd->v.b = 1;
+			return str + sizeof("true") - 1;
+		} else if (strncmp(str, "false", sizeof("false") - 1) == 0) {
+			jd->type = JSON_BOOLEAN;
+			jd->v.b = 0;
+			return str + sizeof("false") - 1;
+		} else if (*str == '[') {
+			jd->type = JSON_ARRAY;
+			return load(p, jd, str);
+		} else if (*str == '{') {
+			jd->type = JSON_OBJECT;
+			return load(p, jd, str);
+		} else {
+			DBG_PRINT("saddly value:%s\n", str);
+			assert(!"saddly!");
+			return NULL;
+		}
+	} else if ((jd->type & JSON_ARRAY) == JSON_ARRAY) {
+			DBG_PRINT("occurs array\n");
+			struct json *arr = NULL;
+			assert(*str == '[');
+			EXPECT(str, '[', "json array should open with '['\n");
+			while (*str != ']' && *str != '\0') {
+				arr = nodeexpand(arr, JSON_OBJECT, nr);
+				str = load(p, &arr[nr].data, str);
+				if (str == NULL) {
+					my_free(arr);
+					return NULL;
+				}
+				if (*str == ',')
+					str++;
+				nr++;
+			}
+			str = skip_space(str);
+			EXPECT(str, ']', "json array should close with ']'\n");
+			if (*str == '\0') {
+				my_free(arr);
+				return NULL;
+			}
+			jd->type |= nr;
+			nr = nr * sizeof(struct json);
+			jd->v.s = (struct json *)pool_alloc(p, nr);
+			memcpy(jd->v.s, arr, nr);
+			my_free(arr);
+			return str;
+	} else {
+		DBG_PRINT("str:%s, J->data.type:%d\n", str, jd->type);
+		assert(!"never come here");
+		return NULL;
+	}
+}
+
+int
+json_loadstring(struct json *j, const char *str)
+{
+	const char *res;
+	struct pool *p;
+	assert(j->data.type & JSON_ROOT);
+	assert(j->data.type & JSON_OBJECT);
+	assert(j->u.pool);
+	assert(j->data.v.s);
+	p = j->u.pool;
+	res = load(p, &j->data, str);
+	if (res == NULL)
+		return -1;
+	return 0;
+}
+
+struct json *
+json_getbyname(struct json *J, const char *name)
+{
+	int i;
+	struct json *data;
+	assert(J);
+	assert(name);
+
+	data = J->data.v.s;
+	if (data == NULL)
+		return NULL;
+
+	for (i = 0; i < (J->data.type & CNT_MASK); i++, data++) {
+		if (data->u.name && strcmp(data->u.name, name) == 0)
+			return data;
+	}
+
+	return NULL;
+}
+
+struct json *
+json_getbyindex(struct json *J, int index)
+{
+	assert(J);
+	assert(index < (J->data.type & CNT_MASK));
+
+	return &J->data.v.s[index];
+}
+
+const char *
+json_getname(struct json *J)
+{
+	assert(J);
+
+	return J->u.name;
+}
+
+const struct json_data *
+json_getdata(struct json *J)
+{
+	assert(J);
+	return &J->data;
+}
+
+int
+json_getdatacnt(struct json *J)
+{
+	assert(J);
+	return (J->data.type & CNT_MASK);
+}
+
+int
+json_gettype(struct json *J)
+{
+	assert(J);
+
+	return (J->data.type & (~CNT_MASK));
+}
+
+
+void
+json_dump(struct json *J)
+{
+	int i;
+	if (J == NULL)
+		return ;
+	if (J->data.type & JSON_OBJECT) {
+		for (i = 0; i < (J->data.type & CNT_MASK); i++) {
+			if (J->u.name && !(J->data.type & JSON_ROOT))
+				printf("object name:%s ", J->u.name);
+			json_dump(&J->data.v.s[i]);
+		}
+	} else if (J->data.type & JSON_VALUE) {
+		switch (J->data.type) {
+		case JSON_BOOLEAN:
+			printf("name->%s:value->boolean, %s\n", J->u.name, J->data.v.b ? "true" : "false");
+			break;
+		case JSON_NUMBER:
+			printf("name->%s:value->%d\n", J->u.name, J->data.v.n);
+			break;
+		case JSON_STRING:
+			printf("name->%s:value->%s\n", J->u.name, J->data.v.c);
+			break;
+		default:
+			printf("Unexpected Json type:0x%x\n", J->data.type);
+			assert(0);
+		}
+	} else if (J->data.type & JSON_ARRAY) {
+		for (i = 0; i < (J->data.type & CNT_MASK); i++)
+			json_dump(&J->data.v.s[i]);
+	}
 }
 
